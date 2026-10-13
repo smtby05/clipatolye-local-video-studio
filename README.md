@@ -1,6 +1,6 @@
 # ClipAtölye
 
-Bilgisayarında çalışan, Türkçe video klip stüdyosu. Arayüz ve iş kuyruğu yereldir; yüklenen videolar `work/media` içinde, oluşturulan MP4 klipler `outputs` içinde saklanır.
+Bilgisayarında çalışan, Türkçe video klip stüdyosu. Arayüz ve iş kuyruğu yereldir; yüklenen videolar `work/media` içinde, oluşturulan MP4 klipler normalde `outputs` içinde saklanır. Windows bu klasöre yazmayı engellerse uygulama yeni dosyaları `work/generated-outputs` içine kaydeder ve önceki `outputs` dosyalarını da görüntülemeye devam eder.
 
 ## Başlatma
 
@@ -22,7 +22,7 @@ Gerekli medya araçları ve temel Whisper modeli bu kopya için kurulmuştur. Ku
 - Dikey çıktıda kırpma, bulanık video arka planı veya yüklenen görsel/video arka planı; arka planı tam ekran ya da üst/alt yarılarda kullanma
 - 1–3 saniyelik yumuşak baş-son döngü geçişi; aynı geçiş karesi videonun iki ucunda buluşur
 - Altyazı ve isteğe bağlı başlık için font ve üst/alt konum seçenekleri
-- Projeler ve klipler `work/projects.json` ile `outputs` içinde kalıcı saklanır; eski sürüm klipleri de geçmişe alınır. Arayüz tercihleri tarayıcıda korunur.
+- Projeler `work/projects.json` içinde kalıcı saklanır; klipler yazılabilir çıktı klasöründe tutulur. Windows klasör izinleri yüzünden `outputs` kullanılamazsa `work/generated-outputs` devreye girer. Eski `outputs` dosyaları okunabilir kalır. Arayüz tercihleri tarayıcıda korunur.
 - Altyazı SRT dosyasını indirme, tarayıcıda düzeltme ve kaydetme
 - Video başlığı/süresi/çözünürlüğü, işlem adımları ve araç durumunu gösterme
 - faster-whisper ile yerel konuşma dökümü, konuşma yoğunluğu ve vurgu sözcüklerinden tahmini öne çıkan an puanı, kelime zamanlı SRT altyazıları ve isteğe bağlı altyazı gömme
