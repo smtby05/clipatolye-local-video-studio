@@ -15,7 +15,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "work" / "media"
-OUT = ROOT / "outputs"
+LEGACY_OUT = ROOT / "outputs"
+OUT = LEGACY_OUT
 PROJECTS_FILE = ROOT / "work" / "projects.json"
 PACKAGES = ROOT / "work" / "python-packages"
 LOCAL_PACKAGES = ROOT / "work" / "runtime-packages-v5"
@@ -28,6 +29,16 @@ os.environ["LOCALAPPDATA"] = str(ROOT / "work" / "localappdata")
 DATA.mkdir(parents=True, exist_ok=True)
 OUT.mkdir(parents=True, exist_ok=True)
 try:
+    # Some Windows installs inherit a read-only/deny ACL on the legacy output
+    # folder. Probe it at startup so FFmpeg and subtitle writes can use a
+    # normal app-owned directory without changing the user's existing files.
+    _probe = OUT / f".clipatolye-write-test-{uuid.uuid4().hex}"
+    _probe.write_text("ok", encoding="utf-8")
+    _probe.unlink()
+except OSError:
+    OUT = ROOT / "work" / "generated-outputs"
+    OUT.mkdir(parents=True, exist_ok=True)
+try:
     _saved_projects = json.loads(PROJECTS_FILE.read_text(encoding="utf-8-sig")) if PROJECTS_FILE.exists() else []
 except Exception:
     _saved_projects = []
@@ -35,7 +46,7 @@ JOBS: dict[str, dict] = {item["id"]: item for item in _saved_projects if isinsta
 # Import outputs made by earlier app versions so existing clips appear in the new history.
 if not _saved_projects:
     legacy = {}
-    for video in OUT.glob("*_klip_*.mp4"):
+    for video in LEGACY_OUT.glob("*_klip_*.mp4"):
         match = re.match(r"(?P<prefix>[a-f0-9]{8})_klip_(?P<num>\d+)\.mp4$", video.name, re.I)
         if not match:
             continue
@@ -196,6 +207,15 @@ def get_remote_info(url: str):
 def format_srt_time(seconds: float):
     ms = max(0, round(seconds * 1000)); h, ms = divmod(ms, 3600000); m, ms = divmod(ms, 60000); s, ms = divmod(ms, 1000)
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
+
+
+def ffmpeg_filter_path(path: Path) -> str:
+    """Format a project-relative file path for FFmpeg filter arguments."""
+    try:
+        value = path.relative_to(ROOT).as_posix()
+    except ValueError:
+        value = path.as_posix()
+    return value.replace("\\", "\\\\").replace(":", "\\:").replace(",", "\\,").replace("'", "\\'")
 
 
 def subtitle_file(words: list, start: float, end: float, path: Path):
@@ -408,25 +428,25 @@ def run_job(job_id: str, config: dict):
                 if filter_complex:
                     tail = "[base]"
                     if words and config.get("captions") == "burn" and srt.exists():
-                        filter_complex += f";[base]subtitles=outputs/{srt.name}:force_style='{caption_style}'[captioned]"
+                        filter_complex += f";[base]subtitles={ffmpeg_filter_path(srt)}:force_style='{caption_style}'[captioned]"
                         tail = "[captioned]"
                     text = str(config.get("overlayText", "")).replace("\r", " ").replace("\n", " ").strip()
                     if text:
                         text_path = OUT / f"{job_id[:8]}_text.txt"
                         text_path.write_text(text, encoding="utf-8")
                         text_y = "h*0.08" if config.get("textPosition") != "bottom" else "h-text_h-h*0.12"
-                        filter_complex += f";{tail}drawtext=font='{font_family}':textfile=outputs/{text_path.name}:fontcolor=white:fontsize=52:borderw=3:bordercolor=black:x=(w-text_w)/2:y={text_y}[vout]"
+                        filter_complex += f";{tail}drawtext=font='{font_family}':textfile={ffmpeg_filter_path(text_path)}:fontcolor=white:fontsize=52:borderw=3:bordercolor=black:x=(w-text_w)/2:y={text_y}[vout]"
                     else:
                         filter_complex += f";{tail}null[vout]"
             if not filter_complex:
                 if words and config.get("captions") == "burn" and srt.exists():
-                    video_filter += f",subtitles=outputs/{srt.name}:force_style='{caption_style}'"
+                    video_filter += f",subtitles={ffmpeg_filter_path(srt)}:force_style='{caption_style}'"
                 text = str(config.get("overlayText", "")).replace("\r", " ").replace("\n", " ").strip()
                 if text:
                     text_path = OUT / f"{job_id[:8]}_text.txt"
                     text_path.write_text(text, encoding="utf-8")
                     text_y = "h*0.08" if config.get("textPosition") != "bottom" else "h-text_h-h*0.12"
-                    video_filter += f",drawtext=font='{font_family}':textfile=outputs/{text_path.name}:fontcolor=white:fontsize=52:borderw=3:bordercolor=black:x=(w-text_w)/2:y={text_y}"
+                    video_filter += f",drawtext=font='{font_family}':textfile={ffmpeg_filter_path(text_path)}:fontcolor=white:fontsize=52:borderw=3:bordercolor=black:x=(w-text_w)/2:y={text_y}"
             if details and not details.get("hasVideo"):
                 cmd = [ffmpeg, "-y", "-f", "lavfi", "-i", "color=c=0x10100f:s=1080x1920:r=30", "-ss", str(start), "-i", str(src), "-t", str(end-start), "-vf", video_filter, "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-c:a", "aac", "-shortest", "-movflags", "+faststart", str(output)]
             else:
@@ -469,7 +489,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.send_header("Access-Control-Allow-Origin", "*"); self.end_headers(); self.wfile.write(body)
     def do_GET(self):
         p = urlparse(self.path).path
-        if p == "/api/status": self.send_json({"version": 22, "tools": tools_status(), "outputDir": str(OUT)}); return
+        if p == "/api/status": self.send_json({"version": 23, "tools": tools_status(), "outputDir": str(OUT)}); return
         if p == "/api/projects":
             with LOCK: projects = [dict(item) for item in JOBS.values()]
             projects.sort(key=lambda item: item.get("createdAt", 0), reverse=True)
@@ -484,7 +504,10 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK: job = JOBS.get(p.rsplit("/", 1)[-1])
             self.send_json(job or {"error": "İş bulunamadı"}, 404 if job is None else 200); return
         if p.startswith("/outputs/"):
-            path = (OUT / Path(unquote(p[len("/outputs/"):])).name)
+            name = Path(unquote(p[len("/outputs/"):])).name
+            path = OUT / name
+            if not path.is_file() and LEGACY_OUT != OUT:
+                path = LEGACY_OUT / name
             if path.exists():
                 mime = "application/x-subrip; charset=utf-8" if path.suffix.lower() == ".srt" else "video/mp4"
                 self.send_response(200); self.send_header("Content-Type", mime); self.send_header("Content-Length", str(path.stat().st_size)); self.end_headers()
@@ -503,6 +526,10 @@ class Handler(BaseHTTPRequestHandler):
         if p.startswith("/api/outputs/"):
             name = Path(unquote(p[len("/api/outputs/"):])).name
             target = OUT / name
+            legacy_target = LEGACY_OUT / name
+            if not target.exists() and LEGACY_OUT != OUT and legacy_target.is_file():
+                try: shutil.copy2(legacy_target, target)
+                except OSError: pass
             size = int(self.headers.get("Content-Length", "0"))
             if target.suffix.lower() != ".srt" or not target.is_file() or size > 1024 * 1024:
                 self.send_json({"error":"Altyazı dosyası bulunamadı veya boyutu geçersiz."},400); return
