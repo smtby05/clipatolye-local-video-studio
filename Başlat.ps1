@@ -44,13 +44,13 @@ $env:APPDATA = Join-Path $PSScriptRoot "work\appdata"
 $port = 8765
 try {
   $running = Invoke-RestMethod "http://127.0.0.1:8765/api/status" -TimeoutSec 2
-  if ($running.version -eq 22) { Start-Process "http://127.0.0.1:8765"; exit 0 }
+  if ($running.version -eq 23) { Start-Process "http://127.0.0.1:8765"; exit 0 }
   $port = 8766
 } catch { }
 while ($port -le 8785) {
   try {
     $running = Invoke-RestMethod "http://127.0.0.1:$port/api/status" -TimeoutSec 1
-    if ($running.version -eq 22) { Start-Process "http://127.0.0.1:$port"; exit 0 }
+    if ($running.version -eq 23) { Start-Process "http://127.0.0.1:$port"; exit 0 }
     $port++
   } catch { break }
 }
