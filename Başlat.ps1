@@ -1,5 +1,15 @@
 $ErrorActionPreference = "Stop"
 $PSNativeCommandUseErrorActionPreference = $false
+function Invoke-NativeCapture {
+  param([string]$Executable, [string[]]$Arguments)
+  $savedPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $lines = @(& $Executable @Arguments 2>&1)
+    $exitCode = $LASTEXITCODE
+    return [pscustomobject]@{ ExitCode = $exitCode; Output = ($lines | Out-String).Trim() }
+  } finally { $ErrorActionPreference = $savedPreference }
+}
 $pythonCandidates = @(
   (Join-Path $env:LOCALAPPDATA "Programs\Python\Python312\python.exe"),
   (Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe")
@@ -56,17 +66,19 @@ while ($port -le 8785) {
 }
 # Fill missing Python packages on first launch. They remain inside this app.
 $env:PYTHONPATH = "$localPackages;$PSScriptRoot\work\python-packages"
-$whisperProbe = & $python -c "from faster_whisper import WhisperModel" 2>&1
-if ($LASTEXITCODE -ne 0) {
+$whisperProbe = Invoke-NativeCapture -Executable $python -Arguments @("-c", "from faster_whisper import WhisperModel")
+if ($whisperProbe.ExitCode -ne 0) {
   Write-Host "Yerel altyazı kütüphaneleri kuruluyor (ilk açılış)..." -ForegroundColor Cyan
-  & $python -m pip install --disable-pip-version-check --no-warn-script-location --trusted-host pypi.org --trusted-host files.pythonhosted.org --target $localPackages "faster-whisper==1.2.1" "setuptools<81"
-  if ($LASTEXITCODE -ne 0) { Write-Host $whisperProbe; throw "Altyazı kütüphaneleri kurulamadı." }
+  $whisperInstall = Invoke-NativeCapture -Executable $python -Arguments @("-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org", "--target", $localPackages, "faster-whisper==1.2.1", "setuptools<81")
+  if ($whisperInstall.Output) { Write-Host $whisperInstall.Output }
+  if ($whisperInstall.ExitCode -ne 0) { Write-Host $whisperProbe.Output; throw "Altyazı kütüphaneleri kurulamadı." }
 }
-$ytProbe = & $python -c "import server; raise SystemExit(0 if server.has_yt_dlp() else 1)" 2>&1
-if ($LASTEXITCODE -ne 0) {
+$ytProbe = Invoke-NativeCapture -Executable $python -Arguments @("-c", "import server; raise SystemExit(0 if server.has_yt_dlp() else 1)")
+if ($ytProbe.ExitCode -ne 0) {
   Write-Host "Video indirme kütüphanesi kuruluyor (ilk açılış)..." -ForegroundColor Cyan
-  & $python -m pip install --disable-pip-version-check --no-warn-script-location --trusted-host pypi.org --trusted-host files.pythonhosted.org --target $localPackages yt-dlp
-  if ($LASTEXITCODE -ne 0) { Write-Host $ytProbe; throw "yt-dlp kurulamadı." }
+  $ytInstall = Invoke-NativeCapture -Executable $python -Arguments @("-m", "pip", "install", "--disable-pip-version-check", "--no-warn-script-location", "--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org", "--target", $localPackages, "yt-dlp")
+  if ($ytInstall.Output) { Write-Host $ytInstall.Output }
+  if ($ytInstall.ExitCode -ne 0) { Write-Host $ytProbe.Output; throw "yt-dlp kurulamadı." }
 }
 # Existing packages are used as-is; never reinstall on each launch.
 $ffmpegBin = Join-Path $PSScriptRoot "work\tools-v2\ffmpeg\bin"
