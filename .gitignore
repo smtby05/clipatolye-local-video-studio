@@ -1,0 +1,24 @@
+# Local projects, source media, generated clips, and transcripts
+/work/
+/outputs/
+
+# Downloaded tools, Python runtimes, caches, and temporary files
+/.cache/
+/tools/
+/runtime-packages/
+/__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+*.tmp
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Generated Windows installer bundle and its staging folder
+/ClipAtolye-Kurulum/
+/ClipAtolye-Kurulum.zip
